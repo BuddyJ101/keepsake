@@ -1,0 +1,102 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background:
+    radial-gradient(circle at top, #2b446c 0%, #10192a 42%, #060a12 100%);
+  color: #eef4ff;
+}
+
+a {
+  color: #7dc8ff;
+}
+
+.page-shell {
+  min-height: 100vh;
+}
+
+.card-surface {
+  background: rgba(10, 16, 28, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.75rem;
+  color: #8fd3ff;
+}
+
+.intro-copy {
+  color: #c6d4e8;
+  line-height: 1.7;
+}
+
+.info-panel {
+  height: 100%;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #c8d5e6;
+}
+
+.small-label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: #9edcff;
+}
+
+.text-secondary-light {
+  color: #c8d5e6;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #7ed5ff 0%, #4a9dff 100%);
+  border: 0;
+  color: #07101b;
+  font-weight: 700;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background: linear-gradient(135deg, #90ddff 0%, #62aeff 100%) !important;
+  color: #07101b !important;
+}
+
+.status-message {
+  min-height: 1.5rem;
+  color: #c9d8ea;
+}
+
+.status-message.success {
+  color: #97ecb8;
+}
+
+.status-message.error {
+  color: #ff9f9f;
+}
+
+.status-message.working {
+  color: #9ad8ff;
+}
+
+.count-pill {
+  font-size: 0.9rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 999px;
+}
+
+@media (max-width: 575.98px) {
+  .card-surface {
+    border-radius: 22px;
+  }
+}
