@@ -3,7 +3,7 @@ const CONFIG = {
   eventDate: "2026-07-25T15:00:00",
   uploadDaysAfterEvent: 3,
   uploadLimitPerUser: 10,
-  forceState: "upload",
+  forceState: null,
   //  existing states: "countdown" | "upload" | "gallery"
 };
 
@@ -33,6 +33,7 @@ const state = {
   rsvpLoaded: false
 };
 let countdownTimerId = null;
+let uploadLimitTimerId = null;
 
 function getInviteKeyFromUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -107,6 +108,12 @@ function getAppState() {
   if (now <= uploadEnd) return "upload";
 
   return "gallery";
+}
+
+function getUploadEndDate() {
+  const uploadEnd = new Date(CONFIG.eventDate);
+  uploadEnd.setDate(uploadEnd.getDate() + CONFIG.uploadDaysAfterEvent);
+  return uploadEnd;
 }
 
 function syncConfigToUi() {
@@ -220,6 +227,42 @@ function clearCountdown() {
   }
 }
 
+function renderUploadLimitCountdown() {
+  const countdown = document.getElementById("upload-limit-countdown");
+  const message = document.getElementById("upload-limit-message");
+  if (!countdown || !message) return;
+
+  const parts = getCountdownParts(getUploadEndDate());
+  countdown.textContent = `${parts.days}:${parts.hours}:${parts.minutes}:${parts.seconds}`;
+
+  if (getAppState() === "gallery") {
+    message.textContent = "Media is now available.";
+  } else {
+    message.textContent = "Come back to view the gallery.";
+  }
+}
+
+function startUploadLimitCountdown() {
+  clearUploadLimitCountdown();
+  renderUploadLimitCountdown();
+  uploadLimitTimerId = window.setInterval(() => {
+    renderUploadLimitCountdown();
+
+    const nextState = getAppState();
+    if (nextState === "gallery") {
+      clearUploadLimitCountdown();
+      showState(nextState);
+    }
+  }, 1000);
+}
+
+function clearUploadLimitCountdown() {
+  if (uploadLimitTimerId) {
+    window.clearInterval(uploadLimitTimerId);
+    uploadLimitTimerId = null;
+  }
+}
+
 function setInviteBanner(message, tone) {
   const banner = document.getElementById("invite-status");
   if (!banner) return;
@@ -239,6 +282,9 @@ function updateUploaderIdentityUi() {
   const uploadButton = document.getElementById("upload-button");
   const selectWrap = document.getElementById("uploader-select-wrap");
   const uploaderSelect = document.getElementById("uploader-select");
+  const uploadForm = document.getElementById("upload-form");
+  const limitPanel = document.getElementById("upload-limit-panel");
+  const limitReached = state.uploadCount >= CONFIG.uploadLimitPerUser;
 
   if (identityLabel) {
     identityLabel.textContent = `Uploading as ${state.selectedUploaderName || UNNAMED_GUEST}`;
@@ -253,7 +299,21 @@ function updateUploaderIdentityUi() {
   }
 
   if (uploadButton) {
-    uploadButton.disabled = !canUploadForCurrentIdentity();
+    uploadButton.disabled = !canUploadForCurrentIdentity() || limitReached;
+  }
+
+  if (uploadForm) {
+    uploadForm.classList.toggle("d-none", limitReached);
+  }
+
+  if (limitPanel) {
+    limitPanel.classList.toggle("d-none", !limitReached);
+  }
+
+  if (limitReached) {
+    startUploadLimitCountdown();
+  } else {
+    clearUploadLimitCountdown();
   }
 }
 
@@ -437,7 +497,8 @@ async function handleUploadSubmit(event) {
     state.uploadCount += 1;
     setStoredUploadCount(getIdentityStorageKey(state.inviteKey, state.selectedUploaderName), state.uploadCount);
     updateUploadCount();
-    setStatus(`Upload complete. You have used ${state.uploadCount} of ${CONFIG.uploadLimitPerUser} uploads.`, "success");
+    updateUploaderIdentityUi();
+    setStatus(`Upload successfully.`, "success");
     fileInput.value = "";
     button.disabled = false;
     fileInput.disabled = false;
