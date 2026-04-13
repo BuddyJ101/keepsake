@@ -103,17 +103,42 @@
         </div>
 
         <div id="state-gallery" class="col-12 col-xl-8 state-panel d-none" data-state="gallery">
-          <section class="card-surface p-4 p-md-5 text-center">
-            <p class="eyebrow mb-2">Keepsake</p>
-            <h1 class="display-6 fw-semibold mb-3">Gallery</h1>
-            <p class="lead intro-copy mb-0">
-              Gallery state is active. Uploads are closed.
-            </p>
+          <section class="card-surface p-4 p-md-5">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
+              <div>
+                <p class="eyebrow mb-2">Keepsake</p>
+                <h1 class="display-6 fw-semibold mb-2">Gallery</h1>
+                <p class="lead intro-copy mb-0">
+                  Tap any image or video to open it larger, swipe between items, and download it to your device.
+                </p>
+              </div>
+              <span id="gallery-count" class="badge text-bg-light count-pill">0 items</span>
+            </div>
+
+            <div id="gallery-status" class="invite-banner info mb-4 d-none"></div>
+            <div id="gallery-grid" class="gallery-grid"></div>
           </section>
         </div>
       </div>
     </div>
   </main>
+
+  <div id="gallery-lightbox" class="gallery-lightbox d-none" aria-hidden="true">
+    <div class="gallery-lightbox-backdrop"></div>
+    <div class="gallery-lightbox-dialog">
+      <button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close">×</button>
+      <button id="lightbox-prev" class="lightbox-nav lightbox-prev" type="button" aria-label="Previous">‹</button>
+      <button id="lightbox-next" class="lightbox-nav lightbox-next" type="button" aria-label="Next">›</button>
+
+      <div class="lightbox-media-wrap">
+        <div id="lightbox-media" class="lightbox-media"></div>
+        <div class="lightbox-meta">
+          <span id="lightbox-tag" class="lightbox-tag">Unnamed Guest</span>
+          <a id="lightbox-download" class="btn btn-primary" href="#" download>Download</a>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="media.js"></script>
   <script src="script.js"></script>

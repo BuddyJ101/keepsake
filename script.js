@@ -3,7 +3,7 @@ const CONFIG = {
   eventDate: "2026-07-25T15:00:00",
   uploadDaysAfterEvent: 3,
   uploadLimitPerUser: 10,
-  forceState: null,
+  forceState: "gallery",
   //  existing states: "countdown" | "upload" | "gallery"
 };
 
@@ -17,6 +17,7 @@ const STORAGE_KEYS = {
 
 const UNNAMED_GUEST = "Unnamed Guest";
 const UNNAMED_FOLDER = "wedding-app/guests/unnamed/";
+const GALLERY_TAG = "wedding-app";
 const publicEnv = {
   cloudName: document.body.dataset.cloudName,
   uploadPreset: document.body.dataset.uploadPreset,
@@ -30,10 +31,14 @@ const state = {
   uploadCount: 0,
   uploadCountSource: "local session",
   isUnnamedFallback: true,
-  rsvpLoaded: false
+  rsvpLoaded: false,
+  galleryItems: [],
+  activeGalleryIndex: 0,
+  galleryLoaded: false
 };
 let countdownTimerId = null;
 let uploadLimitTimerId = null;
+let lightboxTouchStartX = 0;
 
 function getInviteKeyFromUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -145,6 +150,33 @@ function bindUploadEvents() {
   }
 }
 
+function bindGalleryEvents() {
+  const closeButton = document.getElementById("lightbox-close");
+  const prevButton = document.getElementById("lightbox-prev");
+  const nextButton = document.getElementById("lightbox-next");
+  const lightbox = document.getElementById("gallery-lightbox");
+
+  if (closeButton) {
+    closeButton.addEventListener("click", closeLightbox);
+  }
+
+  if (prevButton) {
+    prevButton.addEventListener("click", showPreviousMedia);
+  }
+
+  if (nextButton) {
+    nextButton.addEventListener("click", showNextMedia);
+  }
+
+  if (lightbox) {
+    lightbox.addEventListener("click", handleLightboxBackdropClick);
+    lightbox.addEventListener("touchstart", handleLightboxTouchStart, { passive: true });
+    lightbox.addEventListener("touchend", handleLightboxTouchEnd, { passive: true });
+  }
+
+  document.addEventListener("keydown", handleLightboxKeydown);
+}
+
 function updateUploadCount() {
   const counter = document.getElementById("upload-count");
   const source = document.getElementById("upload-count-source");
@@ -161,6 +193,24 @@ function showState(activeState) {
     const shouldShow = panel.dataset.state === activeState;
     panel.classList.toggle("d-none", !shouldShow);
   });
+
+  if (activeState === "gallery") {
+    loadGalleryItems();
+  }
+}
+
+function updateGalleryStatus(message, tone) {
+  const status = document.getElementById("gallery-status");
+  if (!status) return;
+
+  if (!message) {
+    status.className = "invite-banner info mb-4 d-none";
+    status.textContent = "";
+    return;
+  }
+
+  status.className = `invite-banner mb-4 ${tone || "info"}`.trim();
+  status.textContent = message;
 }
 
 function formatCountdownPart(value) {
@@ -263,6 +313,11 @@ function clearUploadLimitCountdown() {
   }
 }
 
+function getUploaderDisplayName(name) {
+  const normalized = normalizeGuestName(name);
+  return normalized || "unnamed";
+}
+
 function setInviteBanner(message, tone) {
   const banner = document.getElementById("invite-status");
   if (!banner) return;
@@ -346,6 +401,176 @@ function normalizeGuestName(name) {
     .replace(/\s+/g, "-")
     .replace(/[^a-zA-Z0-9-_]/g, "")
     .toLowerCase();
+}
+
+function getCloudinaryListUrl() {
+  return `https://res.cloudinary.com/${publicEnv.cloudName}/any/list/${GALLERY_TAG}.json`;
+}
+
+function getResourceUrl(resource) {
+  if (resource.secure_url) return resource.secure_url;
+
+  const version = resource.version ? `v${resource.version}/` : "";
+  return `https://res.cloudinary.com/${publicEnv.cloudName}/${resource.resource_type}/upload/${version}${resource.public_id}.${resource.format}`;
+}
+
+function mapGalleryResource(resource) {
+  const context = resource.context?.custom || resource.context || {};
+  const rawName = context.uploaderName || context.uploadername || UNNAMED_GUEST;
+  const displayName = rawName === UNNAMED_GUEST ? "unnamed" : getUploaderDisplayName(rawName);
+
+  return {
+    id: resource.asset_id || resource.public_id,
+    type: resource.resource_type === "video" ? "video" : "image",
+    url: getResourceUrl(resource),
+    thumbUrl: resource.resource_type === "video"
+      ? `https://res.cloudinary.com/${publicEnv.cloudName}/video/upload/so_0/${resource.public_id}.jpg`
+      : getResourceUrl(resource),
+    tag: displayName,
+    alt: displayName
+  };
+}
+
+function renderGallery() {
+  const grid = document.getElementById("gallery-grid");
+  const count = document.getElementById("gallery-count");
+  if (!grid || !count) return;
+
+  count.textContent = `${state.galleryItems.length} item${state.galleryItems.length === 1 ? "" : "s"}`;
+
+  if (!state.galleryItems.length) {
+    grid.innerHTML = `
+      <div class="gallery-empty">
+        <p class="mb-1 fw-semibold">No gallery media yet</p>
+        <p class="mb-0 text-secondary">Uploads tagged with ${GALLERY_TAG} will appear here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = state.galleryItems
+    .map((item, index) => `
+      <button class="gallery-card" type="button" data-gallery-index="${index}" aria-label="Open media ${index + 1}">
+        <div class="gallery-media-shell">
+          ${item.type === "video"
+            ? `<img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">`
+            : `<img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">`}
+        </div>
+        <span class="gallery-tag">${item.tag}</span>
+      </button>
+    `)
+    .join("");
+
+  grid.querySelectorAll("[data-gallery-index]").forEach((button) => {
+    button.addEventListener("click", () => openLightbox(Number(button.dataset.galleryIndex)));
+  });
+}
+
+async function loadGalleryItems() {
+  updateGalleryStatus("Loading gallery...", "info");
+
+  try {
+    const response = await fetch(getCloudinaryListUrl(), { cache: "no-store" });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || "Gallery list could not be loaded.");
+    }
+
+    state.galleryItems = Array.isArray(data.resources)
+      ? data.resources.map(mapGalleryResource)
+      : [];
+    state.galleryLoaded = true;
+
+    renderGallery();
+    updateGalleryStatus("", "info");
+  } catch (error) {
+    console.error(error);
+    state.galleryItems = [];
+    state.galleryLoaded = false;
+    renderGallery();
+    updateGalleryStatus(
+      "Gallery media could not be loaded. Make sure Cloudinary client-side asset lists are enabled and uploads are tagged with wedding-app.",
+      "warning"
+    );
+  }
+}
+
+function renderLightboxMedia(item) {
+  const container = document.getElementById("lightbox-media");
+  const tag = document.getElementById("lightbox-tag");
+  const download = document.getElementById("lightbox-download");
+  if (!container || !tag || !download) return;
+
+  container.innerHTML = item.type === "video"
+    ? `<video class="lightbox-asset" src="${item.url}" controls autoplay playsinline></video>`
+    : `<img class="lightbox-asset" src="${item.url}" alt="${item.alt}">`;
+
+  tag.textContent = item.tag;
+  download.href = item.url;
+  download.setAttribute("download", "");
+}
+
+function openLightbox(index) {
+  if (!state.galleryItems.length) return;
+
+  state.activeGalleryIndex = index;
+  renderLightboxMedia(state.galleryItems[index]);
+
+  const lightbox = document.getElementById("gallery-lightbox");
+  if (!lightbox) return;
+  lightbox.classList.remove("d-none");
+  lightbox.setAttribute("aria-hidden", "false");
+}
+
+function closeLightbox() {
+  const lightbox = document.getElementById("gallery-lightbox");
+  const media = document.getElementById("lightbox-media");
+  if (!lightbox || !media) return;
+
+  lightbox.classList.add("d-none");
+  lightbox.setAttribute("aria-hidden", "true");
+  media.innerHTML = "";
+}
+
+function showNextMedia() {
+  if (!state.galleryItems.length) return;
+  state.activeGalleryIndex = (state.activeGalleryIndex + 1) % state.galleryItems.length;
+  renderLightboxMedia(state.galleryItems[state.activeGalleryIndex]);
+}
+
+function showPreviousMedia() {
+  if (!state.galleryItems.length) return;
+  state.activeGalleryIndex = (state.activeGalleryIndex - 1 + state.galleryItems.length) % state.galleryItems.length;
+  renderLightboxMedia(state.galleryItems[state.activeGalleryIndex]);
+}
+
+function handleLightboxBackdropClick(event) {
+  if (event.target.id === "gallery-lightbox" || event.target.classList.contains("gallery-lightbox-backdrop")) {
+    closeLightbox();
+  }
+}
+
+function handleLightboxKeydown(event) {
+  const lightbox = document.getElementById("gallery-lightbox");
+  if (!lightbox || lightbox.classList.contains("d-none")) return;
+
+  if (event.key === "Escape") closeLightbox();
+  if (event.key === "ArrowRight") showNextMedia();
+  if (event.key === "ArrowLeft") showPreviousMedia();
+}
+
+function handleLightboxTouchStart(event) {
+  lightboxTouchStartX = event.changedTouches[0]?.clientX || 0;
+}
+
+function handleLightboxTouchEnd(event) {
+  const touchEndX = event.changedTouches[0]?.clientX || 0;
+  const delta = touchEndX - lightboxTouchStartX;
+
+  if (Math.abs(delta) < 40) return;
+  if (delta < 0) showNextMedia();
+  if (delta > 0) showPreviousMedia();
 }
 
 function getUploadFolder() {
@@ -522,6 +747,7 @@ async function uploadFile(file) {
   formData.append("file", file);
   formData.append("upload_preset", publicEnv.uploadPreset);
   formData.append("folder", getUploadFolder());
+  formData.append("tags", GALLERY_TAG);
   formData.append("context", `inviteKey=${state.inviteKey || "unnamed"}|uploaderName=${state.selectedUploaderName || UNNAMED_GUEST}`);
 
   const response = await fetch(
@@ -546,6 +772,7 @@ async function uploadFile(file) {
 
 syncConfigToUi();
 bindUploadEvents();
+bindGalleryEvents();
 
 const initialState = getAppState();
 showState(initialState);
