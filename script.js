@@ -16,6 +16,7 @@ const publicEnv = {
 const state = {
   uploadCount: loadUploadCount()
 };
+let countdownTimerId = null;
 
 function loadUploadCount() {
   try {
@@ -52,8 +53,13 @@ function getAppState() {
 }
 
 function syncConfigToUi() {
+  const countdownTitle = document.getElementById("countdown-event-title");
   const eventTitle = document.getElementById("upload-event-title");
   const helpText = document.getElementById("upload-help-text");
+
+  if (countdownTitle) {
+    countdownTitle.textContent = CONFIG.eventTitle;
+  }
 
   if (eventTitle) {
     eventTitle.textContent = CONFIG.eventTitle;
@@ -81,6 +87,64 @@ function showState(activeState) {
     const shouldShow = panel.dataset.state === activeState;
     panel.classList.toggle("d-none", !shouldShow);
   });
+}
+
+function formatCountdownPart(value) {
+  return String(Math.max(0, value)).padStart(2, "0");
+}
+
+function getCountdownParts(targetDate) {
+  const totalMs = new Date(targetDate).getTime() - Date.now();
+
+  if (totalMs <= 0) {
+    return {
+      days: "00",
+      hours: "00",
+      minutes: "00",
+      seconds: "00"
+    };
+  }
+
+  const totalSeconds = Math.floor(totalMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return {
+    days: formatCountdownPart(days),
+    hours: formatCountdownPart(hours),
+    minutes: formatCountdownPart(minutes),
+    seconds: formatCountdownPart(seconds)
+  };
+}
+
+function renderCountdown() {
+  const countdownDisplay = document.getElementById("countdown-display");
+  if (!countdownDisplay) return;
+
+  const parts = getCountdownParts(CONFIG.eventDate);
+  countdownDisplay.textContent = `${parts.days}:${parts.hours}:${parts.minutes}:${parts.seconds}`;
+}
+
+function startCountdown() {
+  clearCountdown();
+  renderCountdown();
+  countdownTimerId = window.setInterval(() => {
+    renderCountdown();
+
+    if (getAppState() !== "countdown") {
+      clearCountdown();
+      showState(getAppState());
+    }
+  }, 1000);
+}
+
+function clearCountdown() {
+  if (countdownTimerId) {
+    window.clearInterval(countdownTimerId);
+    countdownTimerId = null;
+  }
 }
 
 async function handleUploadSubmit(event) {
@@ -167,4 +231,10 @@ async function uploadFile(file) {
 syncConfigToUi();
 bindUploadEvents();
 updateUploadCount();
-showState(getAppState());
+
+const initialState = getAppState();
+showState(initialState);
+
+if (initialState === "countdown") {
+  startCountdown();
+}

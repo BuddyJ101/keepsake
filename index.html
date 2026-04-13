@@ -21,12 +21,15 @@
     <div class="container">
       <div class="row justify-content-center g-4">
         <div id="state-countdown" class="col-12 col-xl-8 state-panel d-none" data-state="countdown">
-          <section class="card-surface p-4 p-md-5 text-center">
-            <p class="eyebrow mb-2">Keepsake</p>
-            <h1 class="display-6 fw-semibold mb-3">Countdown</h1>
-            <p class="lead intro-copy mb-0">
-              Countdown state is active. The upload section will appear when the event opens.
-            </p>
+          <section class="card-surface countdown-surface p-4 p-md-5">
+            <p id="countdown-event-title" class="eyebrow mb-3">Keepsake</p>
+            <!-- <h1 class="countdown-kicker mb-2">Watch this space</h1> -->
+            <h2 class="countdown-title mb-4">Come back for a surprise in:</h2>
+            <div class="countdown-center">
+              <div class="countdown-display-wrap mx-auto">
+                <p id="countdown-display" class="countdown-display mb-0">00:00:00:00</p>
+              </div>
+            </div>
           </section>
         </div>
 

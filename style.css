@@ -26,11 +26,57 @@ a {
   backdrop-filter: blur(16px);
 }
 
+.countdown-surface {
+  padding-top: clamp(2.5rem, 6vw, 4.5rem);
+  padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.countdown-surface .eyebrow {
+  text-align: center;
+}
+
+.countdown-center {
+  min-height: min(58vh, 620px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.75rem;
   color: #8fd3ff;
+}
+
+.countdown-kicker {
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a9ddff;
+  text-align: center;
+}
+
+.countdown-title {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-weight: 700;
+  color: #f5f8ff;
+}
+
+.countdown-display-wrap {
+  width: min(90%, 1000px);
+  margin-inline: auto;
+}
+
+.countdown-display {
+  font-size: clamp(2.2rem, 9vw, 6.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.08em;
+  color: #f7fbff;
+  text-wrap: balance;
 }
 
 .intro-copy {
