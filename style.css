@@ -127,6 +127,18 @@ a {
   color: #d8edff;
 }
 
+.camera-action .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.camera-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -331,6 +343,10 @@ a {
   font-size: 0.9rem;
   padding: 0.65rem 0.85rem;
   border-radius: 999px;
+}
+
+#upload-help-text {
+    color: white !important;
 }
 
 @media (max-width: 575.98px) {

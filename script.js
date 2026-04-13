@@ -3,9 +3,10 @@ const CONFIG = {
   eventDate: "2026-07-25T15:00:00",
   uploadDaysAfterEvent: 3,
   uploadLimitPerUser: 10,
-  forceState: "gallery",
+  forceState: "upload",
   //  existing states: "countdown" | "upload" | "gallery"
 };
+//TODO: After event date passed disable Camera upload option
 
 const RSVP_API_BASE = "https://script.google.com/macros/s/AKfycbyPe85jGsLQ2yS-BxHCtofzTgHJAwgUOibTXHo2zf7nEqDuKLOXOSrAh31TgiVs43Jd/exec";
 
@@ -34,7 +35,9 @@ const state = {
   rsvpLoaded: false,
   galleryItems: [],
   activeGalleryIndex: 0,
-  galleryLoaded: false
+  galleryLoaded: false,
+  cameraSupported: false,
+  cameraEnabled: false
 };
 let countdownTimerId = null;
 let uploadLimitTimerId = null;
@@ -150,6 +153,33 @@ function bindUploadEvents() {
   }
 }
 
+function bindCameraEvents() {
+  const cameraButton = document.getElementById("camera-button");
+  const cameraFileInput = document.getElementById("camera-file-input");
+
+  if (cameraButton) {
+    cameraButton.addEventListener("click", () => {
+      if (!state.cameraEnabled || !cameraFileInput) return;
+
+      if (!canUploadForCurrentIdentity()) {
+        setStatus("Please choose which guest is uploading before continuing.", "error");
+        return;
+      }
+
+      if (state.uploadCount >= CONFIG.uploadLimitPerUser) {
+        updateUploaderIdentityUi();
+        return;
+      }
+
+      cameraFileInput.click();
+    });
+  }
+
+  if (cameraFileInput) {
+    cameraFileInput.addEventListener("change", handleCameraFileChange);
+  }
+}
+
 function bindGalleryEvents() {
   const closeButton = document.getElementById("lightbox-close");
   const prevButton = document.getElementById("lightbox-prev");
@@ -197,6 +227,40 @@ function showState(activeState) {
   if (activeState === "gallery") {
     loadGalleryItems();
   }
+}
+
+function detectCameraSupport() {
+  const input = document.createElement("input");
+  input.type = "file";
+  const hasNativeCapture = "capture" in input;
+  const likelyMobile = window.matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  state.cameraSupported = hasNativeCapture;
+  state.cameraEnabled = hasNativeCapture && likelyMobile;
+
+  const cameraButton = document.getElementById("camera-button");
+  const cameraHelp = document.getElementById("camera-help");
+
+  if (!cameraButton || !cameraHelp) return;
+
+  if (state.cameraEnabled) {
+    cameraButton.disabled = false;
+    cameraButton.classList.remove("d-none");
+    cameraButton.removeAttribute("title");
+    cameraHelp.textContent = "Open your phone camera, take a photo with the native camera app, and upload it automatically.";
+    return;
+  }
+
+  if (state.cameraSupported) {
+    cameraButton.disabled = true;
+    cameraButton.setAttribute("title", "Native camera capture is intended for mobile devices.");
+    cameraHelp.textContent = "Native camera capture is currently enabled for mobile devices only.";
+    return;
+  }
+
+  cameraButton.disabled = true;
+  cameraButton.setAttribute("title", "Native camera capture is not available on this device.");
+  cameraHelp.textContent = "Native camera capture is not available on this device.";
 }
 
 function updateGalleryStatus(message, tone) {
@@ -310,6 +374,22 @@ function clearUploadLimitCountdown() {
   if (uploadLimitTimerId) {
     window.clearInterval(uploadLimitTimerId);
     uploadLimitTimerId = null;
+  }
+}
+
+async function handleCameraFileChange(event) {
+  const input = event.target;
+  const file = input.files?.[0];
+
+  if (!file) return;
+
+  try {
+    await processUpload(file, {
+      pendingMessage: "Uploading captured photo...",
+      successMessage: "Captured photo uploaded successfully."
+    });
+  } finally {
+    input.value = "";
   }
 }
 
@@ -684,7 +764,6 @@ async function handleUploadSubmit(event) {
   event.preventDefault();
 
   const fileInput = document.getElementById("media-file");
-  const button = document.getElementById("upload-button");
   const file = fileInput.files[0];
 
   if (!file) {
@@ -692,29 +771,42 @@ async function handleUploadSubmit(event) {
     return;
   }
 
+  await processUpload(file, {
+    pendingMessage: `Uploading ${file.name}...`,
+    successMessage: "Upload successful."
+  });
+}
+
+async function processUpload(file, messages) {
+  const fileInput = document.getElementById("media-file");
+  const button = document.getElementById("upload-button");
+  const pendingMessage = messages?.pendingMessage || `Uploading ${file.name}...`;
+  const successMessage = messages?.successMessage || "Upload successful.";
+
   if (!isAcceptedFile(file)) {
     setStatus("Only image and video files are supported.", "error");
-    return;
+    throw new Error("Only image and video files are supported.");
   }
 
   if (!canUploadForCurrentIdentity()) {
     setStatus("Please choose which guest is uploading before continuing.", "error");
-    return;
+    throw new Error("Please choose which guest is uploading before continuing.");
   }
 
   if (file.size > publicEnv.maxFileSizeMb * 1024 * 1024) {
     setStatus(`File is too large. Maximum size is ${publicEnv.maxFileSizeMb} MB.`, "error");
-    return;
+    throw new Error(`File is too large. Maximum size is ${publicEnv.maxFileSizeMb} MB.`);
   }
 
   if (state.uploadCount >= CONFIG.uploadLimitPerUser) {
     setStatus(`Upload limit reached. You have already used ${CONFIG.uploadLimitPerUser} uploads.`, "error");
-    return;
+    updateUploaderIdentityUi();
+    throw new Error(`Upload limit reached. You have already used ${CONFIG.uploadLimitPerUser} uploads.`);
   }
 
-  button.disabled = true;
-  fileInput.disabled = true;
-  setStatus(`Uploading ${file.name}...`, "working");
+  if (button) button.disabled = true;
+  if (fileInput) fileInput.disabled = true;
+  setStatus(pendingMessage, "working");
 
   try {
     await uploadFile(file);
@@ -723,15 +815,16 @@ async function handleUploadSubmit(event) {
     setStoredUploadCount(getIdentityStorageKey(state.inviteKey, state.selectedUploaderName), state.uploadCount);
     updateUploadCount();
     updateUploaderIdentityUi();
-    setStatus(`Upload successfully.`, "success");
-    fileInput.value = "";
-    button.disabled = false;
-    fileInput.disabled = false;
+    setStatus(successMessage, "success");
+    if (fileInput) fileInput.value = "";
+    if (button) button.disabled = false;
+    if (fileInput) fileInput.disabled = false;
   } catch (error) {
     console.error(error);
     setStatus(error.message || "Upload failed. Check your Cloudinary preset and try again.", "error");
-    button.disabled = false;
-    fileInput.disabled = false;
+    if (button) button.disabled = false;
+    if (fileInput) fileInput.disabled = false;
+    throw error;
   }
 }
 
@@ -773,6 +866,8 @@ async function uploadFile(file) {
 syncConfigToUi();
 bindUploadEvents();
 bindGalleryEvents();
+bindCameraEvents();
+detectCameraSupport();
 
 const initialState = getAppState();
 showState(initialState);
