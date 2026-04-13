@@ -57,6 +57,16 @@
               <div class="col-12">
                 <h2 class="h4 mb-3">Upload Media</h2>
                 <form id="upload-form" novalidate>
+                  <div id="invite-status" class="invite-banner d-none mb-3"></div>
+
+                  <div id="uploader-select-wrap" class="mb-3 d-none">
+                    <label for="uploader-select" class="form-label">Who is uploading?</label>
+                    <select id="uploader-select" class="form-select">
+                      <option value="">Select a guest</option>
+                    </select>
+                    <div class="form-text">Choose the person whose uploads should be saved into their folder.</div>
+                  </div>
+
                   <div class="mb-3">
                     <label for="media-file" class="form-label">Choose an image or video</label>
                     <input

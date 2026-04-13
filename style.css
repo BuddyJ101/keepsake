@@ -51,14 +51,6 @@ a {
   color: #8fd3ff;
 }
 
-.countdown-kicker {
-  font-size: clamp(1rem, 2vw, 1.2rem);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #a9ddff;
-  text-align: center;
-}
-
 .countdown-title {
   font-size: clamp(2rem, 5vw, 3.4rem);
   font-weight: 700;
@@ -102,6 +94,37 @@ a {
 
 .text-secondary-light {
   color: #c8d5e6;
+}
+
+.info-copy {
+  color: #dfe8f6;
+  font-size: 0.95rem;
+}
+
+.invite-banner {
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: rgba(143, 211, 255, 0.08);
+  border: 1px solid rgba(143, 211, 255, 0.18);
+  color: #d8edff;
+}
+
+.invite-banner.success {
+  background: rgba(151, 236, 184, 0.12);
+  border-color: rgba(151, 236, 184, 0.28);
+  color: #c5f4d7;
+}
+
+.invite-banner.warning {
+  background: rgba(255, 214, 120, 0.12);
+  border-color: rgba(255, 214, 120, 0.28);
+  color: #ffe7a6;
+}
+
+.invite-banner.info {
+  background: rgba(143, 211, 255, 0.08);
+  border-color: rgba(143, 211, 255, 0.18);
+  color: #d8edff;
 }
 
 .btn-primary {
