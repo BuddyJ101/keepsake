@@ -1,12 +1,12 @@
 const CONFIG = {
   eventTitle: "Keepsake",
   eventDate: "2026-07-25T15:00:00",
+  cameraUploadCutoffDate: "2026-07-26T05:00:00",
   uploadDaysAfterEvent: 3,
   uploadLimitPerUser: 10,
-  forceState: "upload",
+  forceState: null,
   //  existing states: "countdown" | "upload" | "gallery"
 };
-//TODO: After event date passed disable Camera upload option
 
 const RSVP_API_BASE = "https://script.google.com/macros/s/AKfycbyPe85jGsLQ2yS-BxHCtofzTgHJAwgUOibTXHo2zf7nEqDuKLOXOSrAh31TgiVs43Jd/exec";
 
@@ -41,6 +41,7 @@ const state = {
 };
 let countdownTimerId = null;
 let uploadLimitTimerId = null;
+let cameraAvailabilityTimerId = null;
 let lightboxTouchStartX = 0;
 
 function getInviteKeyFromUrl() {
@@ -124,6 +125,14 @@ function getUploadEndDate() {
   return uploadEnd;
 }
 
+function getCameraUploadCutoffDate() {
+  return new Date(CONFIG.cameraUploadCutoffDate);
+}
+
+function isCameraUploadWindowOpen() {
+  return Date.now() < getCameraUploadCutoffDate().getTime();
+}
+
 function syncConfigToUi() {
   const countdownTitle = document.getElementById("countdown-event-title");
   const eventTitle = document.getElementById("upload-event-title");
@@ -168,6 +177,12 @@ function bindCameraEvents() {
 
       if (state.uploadCount >= CONFIG.uploadLimitPerUser) {
         updateUploaderIdentityUi();
+        return;
+      }
+
+      if (!isCameraUploadWindowOpen()) {
+        updateCameraAvailabilityUi();
+        setStatus("Camera capture has closed. Please use the upload field to add media.", "error");
         return;
       }
 
@@ -225,8 +240,17 @@ function showState(activeState) {
   });
 
   if (activeState === "gallery") {
+    clearCameraAvailabilityWatcher();
     loadGalleryItems();
+    return;
   }
+
+  if (activeState === "upload") {
+    startCameraAvailabilityWatcher();
+    return;
+  }
+
+  clearCameraAvailabilityWatcher();
 }
 
 function detectCameraSupport() {
@@ -243,24 +267,45 @@ function detectCameraSupport() {
 
   if (!cameraButton || !cameraHelp) return;
 
-  if (state.cameraEnabled) {
-    cameraButton.disabled = false;
-    cameraButton.classList.remove("d-none");
-    cameraButton.removeAttribute("title");
-    cameraHelp.textContent = "Open your phone camera, take a photo with the native camera app, and upload it automatically.";
+  if (!state.cameraSupported) {
+    cameraButton.disabled = true;
+    cameraButton.setAttribute("title", "Native camera capture is not available on this device.");
+    cameraHelp.textContent = "Native camera capture is not available on this device.";
     return;
   }
 
-  if (state.cameraSupported) {
+  if (!state.cameraEnabled) {
     cameraButton.disabled = true;
     cameraButton.setAttribute("title", "Native camera capture is intended for mobile devices.");
     cameraHelp.textContent = "Native camera capture is currently enabled for mobile devices only.";
     return;
   }
 
-  cameraButton.disabled = true;
-  cameraButton.setAttribute("title", "Native camera capture is not available on this device.");
-  cameraHelp.textContent = "Native camera capture is not available on this device.";
+  updateCameraAvailabilityUi();
+}
+
+function updateCameraAvailabilityUi() {
+  const cameraButton = document.getElementById("camera-button");
+  const cameraHelp = document.getElementById("camera-help");
+
+  if (!cameraButton || !cameraHelp || !state.cameraSupported || !state.cameraEnabled) return;
+
+  const cameraWindowOpen = isCameraUploadWindowOpen();
+  const cutoffText = getCameraUploadCutoffDate().toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+
+  cameraButton.disabled = !cameraWindowOpen;
+
+  if (cameraWindowOpen) {
+    cameraButton.removeAttribute("title");
+    cameraHelp.textContent = `Open your phone camera, take a photo with the native camera app, and upload it automatically. Camera capture closes ${cutoffText}.`;
+    return;
+  }
+
+  cameraButton.setAttribute("title", `Camera capture closed ${cutoffText}.`);
+  cameraHelp.textContent = `Camera capture closed ${cutoffText}. Please use the upload field below for photos and videos.`;
 }
 
 function updateGalleryStatus(message, tone) {
@@ -374,6 +419,21 @@ function clearUploadLimitCountdown() {
   if (uploadLimitTimerId) {
     window.clearInterval(uploadLimitTimerId);
     uploadLimitTimerId = null;
+  }
+}
+
+function startCameraAvailabilityWatcher() {
+  clearCameraAvailabilityWatcher();
+  updateCameraAvailabilityUi();
+  cameraAvailabilityTimerId = window.setInterval(() => {
+    updateCameraAvailabilityUi();
+  }, 30000);
+}
+
+function clearCameraAvailabilityWatcher() {
+  if (cameraAvailabilityTimerId) {
+    window.clearInterval(cameraAvailabilityTimerId);
+    cameraAvailabilityTimerId = null;
   }
 }
 
