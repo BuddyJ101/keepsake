@@ -463,6 +463,24 @@ function setInviteBanner(message, tone) {
   banner.textContent = message;
 }
 
+function setInviteLoading(isLoading) {
+  const loading = document.getElementById("invite-loading");
+  const banner = document.getElementById("invite-status");
+  const selectWrap = document.getElementById("uploader-select-wrap");
+
+  if (loading) {
+    loading.classList.toggle("d-none", !isLoading);
+  }
+
+  if (banner) {
+    banner.classList.toggle("d-none", isLoading || !banner.textContent);
+  }
+
+  if (selectWrap && isLoading) {
+    selectWrap.classList.add("d-none");
+  }
+}
+
 function updateUploaderIdentityUi() {
   const uploadButton = document.getElementById("upload-button");
   const selectWrap = document.getElementById("uploader-select-wrap");
@@ -749,6 +767,7 @@ async function initializeInviteIdentity() {
   const previousInviteKey = loadStoredInviteKey();
 
   if (!state.inviteKey) {
+    setInviteLoading(false);
     state.isUnnamedFallback = true;
     state.uploaderOptions = [];
     state.selectedUploaderName = UNNAMED_GUEST;
@@ -760,6 +779,8 @@ async function initializeInviteIdentity() {
     setInviteBanner("No invite detected. Uploading as Unnamed Guest.", "info");
     return;
   }
+
+  setInviteLoading(true);
 
   try {
     const rsvpData = await fetchRsvpData(state.inviteKey);
@@ -790,6 +811,8 @@ async function initializeInviteIdentity() {
     saveStoredInviteKey("");
     saveStoredSelectedUploader(UNNAMED_GUEST);
     setInviteBanner("Invite lookup failed. Falling back to Unnamed Guest.", "warning");
+  } finally {
+    setInviteLoading(false);
   }
 
   populateUploaderSelect();

@@ -131,6 +131,13 @@ a {
   color: #d8edff;
 }
 
+.invite-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #d8edff;
+}
+
 .camera-action .btn {
   display: inline-flex;
   align-items: center;
