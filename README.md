@@ -1,246 +1,126 @@
 # Keepsake
 
-Keepsake is a frontend-only single-page website for collecting and sharing event memories. It is built with plain HTML, CSS, and JavaScript, and uses Cloudinary for direct browser uploads, media hosting, and delivery.
+Keepsake is a frontend-only single-page wedding web app for timed media sharing. It is built with plain HTML, CSS, and JavaScript, uses Cloudinary for direct browser uploads and media delivery, and runs entirely as a static site.
 
-The experience is intentionally time-based:
+The experience is time-based:
 
-- Before the event: guests see a countdown.
-- During the upload window: guests can contribute a limited number of photos or videos.
-- After the upload window: everyone browses the shared gallery.
+- Before the event, guests see a countdown.
+- During the upload window, guests can upload photos and videos.
+- After the upload window, guests browse the shared gallery.
 
-## Stack
+## Current Setup
 
-- HTML
-- CSS
-- JavaScript
-- Cloudinary
-- `CONFIG`-driven client-side state
-
-## Principles
-
+- Plain `HTML`, `CSS`, and `JavaScript`
+- Single-page layout with three state sections in one `index.html`
+- Direct unsigned uploads to Cloudinary
+- Invite-aware uploader selection via URL and RSVP lookup
+- Local upload count tracking with `localStorage`
+- Gallery loaded from Cloudinary tag listings
 - No backend
-- No frameworks
-- Single-page website
-- Static-site friendly
-- Simple, modular frontend architecture
+- No framework
 
-## How the Site Works
+## App Flow
 
-Keepsake uses one HTML page with a single app root. JavaScript decides which screen to render into that root based on the event date and upload window.
+### 1. Countdown
 
-Primary states:
+Before the event date, the countdown section is shown.
 
-- `countdown`
-- `upload`
-- `gallery`
+- Displays the event title
+- Displays a live `dd:hh:mm:ss` countdown
+- Switches automatically to the upload state when the event starts
 
-This keeps the UX simple while still giving the project a clean state-driven structure.
+### 2. Upload
 
-## Project Files
+During the upload window, the upload state is shown.
 
-Current core files:
+- Heading/status section
+- Invite details section
+- Upload media section
 
-- [`index.html`](D:/Projects/keepsake/index.html) as the main page shell
-- [`style.css`](D:/Projects/keepsake/style.css) for presentation
-- [`script.js`](D:/Projects/keepsake/script.js) for app bootstrap and state orchestration
-- [`media.js`](D:/Projects/keepsake/media.js) for the media manifest
+Upload features:
 
-The full implementation plan is documented in [`TECHNICAL_SPEC.md`](D:/Projects/keepsake/TECHNICAL_SPEC.md).
+- Invite key support from `?invite=...`
+- RSVP lookup from `RSVP_API_BASE`
+- Named guest selection when RSVP data is available
+- Unnamed guest fallback when no invite or lookup fails
+- Native mobile camera capture
+- Standard image/video upload from device storage
+- Per-identity upload counts stored in `localStorage`
+- Upload limit handling with automatic countdown-to-gallery messaging
+- Camera upload cutoff via `cameraUploadCutoffDate`
 
-## Recommended File Structure
+### 3. Gallery
 
-This keeps your current setup mostly intact:
+After the upload window closes, the gallery is shown.
 
-```text
-keepsake/
-├── index.html
-├── style.css
-├── script.js
-├── media.js
-├── README.md
-├── TECHNICAL_SPEC.md
-├── js/
-│   ├── state.js
-│   ├── countdown.js
-│   ├── upload.js
-│   └── gallery.js
-└── assets/
-    ├── icons/
-    └── placeholders/
-```
-
-## Module Plan
-
-### App Entry
-
-`script.js`
-
-- Initializes the application
-- Reads `CONFIG`
-- Determines the active app state
-- Mounts the correct screen into `#app`
-
-### State System
-
-`js/state.js`
-
-- Resolves `countdown`, `upload`, or `gallery`
-- Calculates upload end time
-- Provides shared time formatting helpers
-
-### Countdown
-
-`js/countdown.js`
-
-- Renders the pre-event screen
-- Updates the timer every second
-- Triggers a rerender when the event starts
-
-### Upload
-
-`js/upload.js`
-
-- Renders upload UI
-- Validates selected files
-- Uploads media to Cloudinary
-- Tracks upload count with `localStorage`
-- Handles limit-reached messaging and countdown
-
-### Gallery
-
-`js/gallery.js`
-
-- Renders the media grid
-- Opens a fullscreen modal
-- Supports keyboard and swipe navigation
-
-### Media Manifest
-
-`media.js`
-
-- Holds the media list
-- Stores item metadata such as type, URL, alt text, and poster
+- Responsive media grid
+- Guest tag under each item
+- Fullscreen lightbox
+- Swipe navigation on mobile
+- Arrow key navigation on desktop
+- Video playback only in the enlarged view
+- Download action in the lightbox
 
 ## Configuration
 
-Keepsake should be controlled through a central `CONFIG` object.
-
-Example:
+Runtime behavior is controlled in [`script.js`](D:/Projects/keepsake/script.js) through `CONFIG`.
 
 ```js
 const CONFIG = {
   eventTitle: "Keepsake",
   eventDate: "2026-07-25T15:00:00",
+  cameraUploadCutoffDate: "2026-07-26T05:00:00",
   uploadDaysAfterEvent: 3,
-  uploadLimitPerDevice: 10,
-  cloudName: "your-cloud-name",
-  uploadPreset: "keepsake_unsigned",
-  forceState: null // "countdown" | "upload" | "gallery"
+  uploadLimitPerUser: 10,
+  forceState: "upload"
 };
 ```
 
-## Cloudinary Setup
+Notes:
 
-Keepsake is designed to use Cloudinary for direct browser uploads.
+- `eventDate` controls when countdown ends
+- `cameraUploadCutoffDate` controls when native camera capture stops
+- `uploadDaysAfterEvent` controls when the gallery unlocks
+- `forceState` is useful for development and demos
 
-You will need:
+## Cloudinary Requirements
 
-- Cloudinary account
-- Cloud name
-- Unsigned upload preset
-- Optional upload folder such as `keepsake/`
+The app expects public Cloudinary values to be provided in `data-` attributes on [`index.html`](D:/Projects/keepsake/index.html):
 
-Reference upload flow:
+- `data-cloud-name`
+- `data-upload-preset`
+- `data-max-file-size-mb`
 
-```js
-async function uploadFile(file, config) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", config.uploadPreset);
+Uploads use:
 
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${config.cloudName}/upload`,
-    {
-      method: "POST",
-      body: formData
-    }
-  );
+- folder naming based on invite identity
+- the `wedding-app` tag for gallery discovery
+- upload context for the uploader name and invite key
 
-  const data = await response.json();
+## Project Files
 
-  return {
-    id: data.public_id,
-    type: file.type.startsWith("video") ? "video" : "image",
-    url: data.secure_url
-  };
-}
-```
-
-## State Logic
-
-- If `forceState` is set, use it.
-- If the current time is before `eventDate`, show the countdown.
-- If the current time is within the upload window, show uploads.
-- Otherwise, show the gallery.
-
-## Media Model
-
-Media should be represented as plain objects in `media.js`.
-
-Example:
-
-```js
-const MEDIA = [
-  {
-    id: "photo-001",
-    type: "image",
-    url: "https://res.cloudinary.com/your-cloud-name/image/upload/v1/keepsake/photo-001.jpg",
-    alt: "Ceremony moment"
-  },
-  {
-    id: "video-001",
-    type: "video",
-    url: "https://res.cloudinary.com/your-cloud-name/video/upload/v1/keepsake/video-001.mp4",
-    poster: "https://res.cloudinary.com/your-cloud-name/video/upload/v1/keepsake/video-001-poster.jpg"
-  }
-];
-```
+- [`index.html`](D:/Projects/keepsake/index.html): all page sections and UI structure
+- [`style.css`](D:/Projects/keepsake/style.css): custom styling layered on Bootstrap
+- [`script.js`](D:/Projects/keepsake/script.js): state system, invite flow, uploads, countdown, gallery, and lightbox
+- [`TECHNICAL_SPEC.md`](D:/Projects/keepsake/TECHNICAL_SPEC.md): current technical spec
 
 ## Local Development
 
-Because this is a static single-page frontend site, you can run it with any simple static server.
-
-Examples:
+Run the project with any static server.
 
 ```powershell
 python -m http.server 8000
 ```
 
-or
-
-```powershell
-npx serve .
-```
-
 Then open `http://localhost:8000`.
 
-## Build Order
+## Constraints
 
-1. Finalize the `CONFIG` schema.
-2. Implement the state system.
-3. Build the countdown screen.
-4. Build the upload UI and Cloudinary integration.
-5. Add upload count and limit handling.
-6. Build the limit-reached countdown state.
-7. Build the gallery and modal.
-8. Add keyboard and swipe navigation.
+- Upload counts are browser-local, not globally enforced
+- Cloudinary folder counts are not securely available from a frontend-only app
+- Gallery loading depends on Cloudinary client-side asset list access and the `wedding-app` tag
+- Cloudinary secrets must never be exposed in frontend code
 
-## Known Constraints
+## Technical Spec
 
-- Upload limits stored in `localStorage` are per browser/device, not truly per user.
-- Without a backend, there is no secure user identity or global upload quota enforcement.
-- Auto-fetching all Cloudinary assets may need a later enhancement if you do not want to maintain `media.js` manually.
-
-## Documentation
-
-- Full technical spec: [`TECHNICAL_SPEC.md`](D:/Projects/keepsake/TECHNICAL_SPEC.md)
+The detailed implementation spec lives in [`TECHNICAL_SPEC.md`](D:/Projects/keepsake/TECHNICAL_SPEC.md).

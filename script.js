@@ -26,16 +26,12 @@ const publicEnv = {
 };
 const state = {
   inviteKey: getInviteKeyFromUrl(),
-  sessionInviteKey: null,
   uploaderOptions: [],
   selectedUploaderName: "",
   uploadCount: 0,
-  uploadCountSource: "local session",
   isUnnamedFallback: true,
-  rsvpLoaded: false,
   galleryItems: [],
   activeGalleryIndex: 0,
-  galleryLoaded: false,
   cameraSupported: false,
   cameraEnabled: false
 };
@@ -224,13 +220,8 @@ function bindGalleryEvents() {
 
 function updateUploadCount() {
   const counter = document.getElementById("upload-count");
-  const source = document.getElementById("upload-count-source");
   if (!counter) return;
   counter.textContent = `${state.uploadCount} / ${CONFIG.uploadLimitPerUser}`;
-
-  if (source) {
-    source.textContent = `Count source: ${state.uploadCountSource}`;
-  }
 }
 
 function showState(activeState) {
@@ -473,17 +464,12 @@ function setInviteBanner(message, tone) {
 }
 
 function updateUploaderIdentityUi() {
-  const identityLabel = document.getElementById("uploader-identity-label");
   const uploadButton = document.getElementById("upload-button");
   const selectWrap = document.getElementById("uploader-select-wrap");
   const uploaderSelect = document.getElementById("uploader-select");
   const uploadForm = document.getElementById("upload-form");
   const limitPanel = document.getElementById("upload-limit-panel");
   const limitReached = state.uploadCount >= CONFIG.uploadLimitPerUser;
-
-  if (identityLabel) {
-    identityLabel.textContent = `Uploading as ${state.selectedUploaderName || UNNAMED_GUEST}`;
-  }
 
   if (selectWrap) {
     selectWrap.classList.toggle("d-none", state.uploaderOptions.length === 0);
@@ -592,9 +578,7 @@ function renderGallery() {
     .map((item, index) => `
       <button class="gallery-card" type="button" data-gallery-index="${index}" aria-label="Open media ${index + 1}">
         <div class="gallery-media-shell">
-          ${item.type === "video"
-            ? `<img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">`
-            : `<img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">`}
+          <img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">
         </div>
         <span class="gallery-tag">${item.tag}</span>
       </button>
@@ -620,14 +604,12 @@ async function loadGalleryItems() {
     state.galleryItems = Array.isArray(data.resources)
       ? data.resources.map(mapGalleryResource)
       : [];
-    state.galleryLoaded = true;
 
     renderGallery();
     updateGalleryStatus("", "info");
   } catch (error) {
     console.error(error);
     state.galleryItems = [];
-    state.galleryLoaded = false;
     renderGallery();
     updateGalleryStatus(
       "Gallery media could not be loaded. Make sure Cloudinary client-side asset lists are enabled and uploads are tagged with wedding-app.",
@@ -724,9 +706,6 @@ function getUploadFolder() {
 function refreshUploadCount() {
   const identityKey = getIdentityStorageKey(state.inviteKey, state.selectedUploaderName);
   state.uploadCount = getStoredUploadCount(identityKey);
-  state.uploadCountSource = state.isUnnamedFallback
-    ? "local session"
-    : "cached local count (Cloudinary folder count requires a secure server-side Admin API call)";
   updateUploadCount();
 }
 
@@ -768,7 +747,6 @@ async function fetchRsvpData(inviteKey) {
 
 async function initializeInviteIdentity() {
   const previousInviteKey = loadStoredInviteKey();
-  state.sessionInviteKey = state.inviteKey || "";
 
   if (!state.inviteKey) {
     state.isUnnamedFallback = true;
@@ -785,7 +763,6 @@ async function initializeInviteIdentity() {
 
   try {
     const rsvpData = await fetchRsvpData(state.inviteKey);
-    state.rsvpLoaded = true;
     state.uploaderOptions = buildUploaderOptions(rsvpData);
     state.isUnnamedFallback = state.uploaderOptions.length === 0;
 
@@ -840,6 +817,7 @@ async function handleUploadSubmit(event) {
 async function processUpload(file, messages) {
   const fileInput = document.getElementById("media-file");
   const button = document.getElementById("upload-button");
+  const identityKey = getIdentityStorageKey(state.inviteKey, state.selectedUploaderName);
   const pendingMessage = messages?.pendingMessage || `Uploading ${file.name}...`;
   const successMessage = messages?.successMessage || "Upload successful.";
 
@@ -872,19 +850,18 @@ async function processUpload(file, messages) {
     await uploadFile(file);
 
     state.uploadCount += 1;
-    setStoredUploadCount(getIdentityStorageKey(state.inviteKey, state.selectedUploaderName), state.uploadCount);
+    setStoredUploadCount(identityKey, state.uploadCount);
     updateUploadCount();
     updateUploaderIdentityUi();
     setStatus(successMessage, "success");
     if (fileInput) fileInput.value = "";
-    if (button) button.disabled = false;
-    if (fileInput) fileInput.disabled = false;
   } catch (error) {
     console.error(error);
     setStatus(error.message || "Upload failed. Check your Cloudinary preset and try again.", "error");
+    throw error;
+  } finally {
     if (button) button.disabled = false;
     if (fileInput) fileInput.disabled = false;
-    throw error;
   }
 }
 
