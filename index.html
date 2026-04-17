@@ -52,22 +52,36 @@
             </div>
           </section>
 
+          <section class="card-surface p-4 mb-4">
+            <div class="row g-4">
+              <div class="col-12">
+                <h2 class="h4 mb-3">Invite Details</h2>
+                <p class="intro-copy mb-3">
+                  Confirm who is uploading so each memory is saved into the right guest folder.
+                </p>
+                <div id="invite-status" class="invite-banner d-none mb-3"></div>
+
+                <div id="uploader-select-wrap" class="d-none">
+                  <label for="uploader-select" class="form-label">Who is uploading?</label>
+                  <select id="uploader-select" class="form-select">
+                    <option value="">Select a guest</option>
+                  </select>
+                  <div class="form-text">Choose the person whose uploads should be saved into their folder.</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="card-surface p-4">
             <div class="row g-4">
               <div class="col-12">
                 <h2 class="h4 mb-3">Upload Media</h2>
                 <form id="upload-form" novalidate>
-                  <div id="invite-status" class="invite-banner d-none mb-3"></div>
+                  <p class="intro-copy mb-3">
+                    Capture a moment on your phone or upload existing photos and videos from your device.
+                  </p>
 
-                  <div id="uploader-select-wrap" class="mb-3 d-none">
-                    <label for="uploader-select" class="form-label">Who is uploading?</label>
-                    <select id="uploader-select" class="form-select">
-                      <option value="">Select a guest</option>
-                    </select>
-                    <div class="form-text">Choose the person whose uploads should be saved into their folder.</div>
-                  </div>
-
-                  <div class="camera-action mt-3">
+                  <div class="camera-action">
                     <button id="camera-button" type="button" class="btn btn-outline-light btn-lg w-100">
                       <span class="camera-icon" aria-hidden="true">📷</span>
                       <span>Capture Moments</span>
@@ -81,9 +95,7 @@
                     >
                   </div>
 
-                  <h1 class="text-center" style="margin-top: 20px;margin-bottom: 20px;">
-                    OR
-                  </h1>
+                  <p class="small-label text-center my-4">Or</p>
 
                   <div class="mb-3">
                     <label for="media-file" class="form-label">Choose an image or video</label>
