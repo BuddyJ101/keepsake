@@ -33,7 +33,8 @@ const state = {
   galleryItems: [],
   activeGalleryIndex: 0,
   cameraSupported: false,
-  cameraEnabled: false
+  cameraEnabled: false,
+  rsvpAttending: null,
 };
 let countdownTimerId = null;
 let uploadLimitTimerId = null;
@@ -165,6 +166,11 @@ function bindCameraEvents() {
   if (cameraButton) {
     cameraButton.addEventListener("click", () => {
       if (!state.cameraEnabled || !cameraFileInput) return;
+
+      if (!isUploadAllowed()) {
+        setStatus("Uploads are not allowed for this RSVP.", "error");
+        return;
+      }
 
       if (!canUploadForCurrentIdentity()) {
         setStatus("Please choose which guest is uploading before continuing.", "error");
@@ -380,7 +386,12 @@ function clearCountdown() {
 function renderUploadLimitCountdown() {
   const countdown = document.getElementById("upload-limit-countdown");
   const message = document.getElementById("upload-limit-message");
-  if (!countdown || !message) return;
+  const title = document.getElementById("upload-limit-title");
+  if (!countdown || !message || !title) return;
+
+  if (state.rsvpAttending === "NO") {
+    title.textContent = "You’ll be able to view all the memories when the gallery opens 💙";
+  }
 
   const parts = getCountdownParts(getUploadEndDate());
   countdown.textContent = `${parts.days}:${parts.hours}:${parts.minutes}:${parts.seconds}`;
@@ -482,12 +493,22 @@ function setInviteLoading(isLoading) {
 }
 
 function updateUploaderIdentityUi() {
+  const isRsvpNo = state.rsvpAttending === "NO";
+  const rsvpBlocked = !isUploadAllowed();
   const uploadButton = document.getElementById("upload-button");
+  const uploadStatus = document.getElementById("upload-info");
   const selectWrap = document.getElementById("uploader-select-wrap");
   const uploaderSelect = document.getElementById("uploader-select");
   const uploadForm = document.getElementById("upload-form");
   const limitPanel = document.getElementById("upload-limit-panel");
   const limitReached = state.uploadCount >= CONFIG.uploadLimitPerUser;
+
+  const shouldShowCountdown = limitReached || isRsvpNo;
+
+  // 🚫 HARD BLOCK UI
+  if (isRsvpNo) {
+    if (uploadStatus) uploadStatus.classList.add("d-none");
+  }
 
   if (selectWrap) {
     selectWrap.classList.toggle("d-none", state.uploaderOptions.length === 0);
@@ -498,18 +519,18 @@ function updateUploaderIdentityUi() {
   }
 
   if (uploadButton) {
-    uploadButton.disabled = !canUploadForCurrentIdentity() || limitReached;
+    uploadButton.disabled = rsvpBlocked || !canUploadForCurrentIdentity() || limitReached;
   }
 
   if (uploadForm) {
-    uploadForm.classList.toggle("d-none", limitReached);
+    uploadForm.classList.toggle("d-none", shouldShowCountdown || rsvpBlocked);
   }
 
   if (limitPanel) {
-    limitPanel.classList.toggle("d-none", !limitReached);
+    limitPanel.classList.toggle("d-none", !shouldShowCountdown);
   }
 
-  if (limitReached) {
+  if (shouldShowCountdown) {
     startUploadLimitCountdown();
   } else {
     clearUploadLimitCountdown();
@@ -517,6 +538,7 @@ function updateUploaderIdentityUi() {
 }
 
 function canUploadForCurrentIdentity() {
+  if (!isUploadAllowed()) return false;
   if (state.isUnnamedFallback) return true;
   return Boolean(state.selectedUploaderName);
 }
@@ -737,6 +759,7 @@ function handleUploaderChange(event) {
   saveStoredSelectedUploader(state.selectedUploaderName);
   refreshUploadCount();
   updateUploaderIdentityUi();
+  syncUploadCountFromCloudinary();
 }
 
 function buildUploaderOptions(payload) {
@@ -771,6 +794,7 @@ async function initializeInviteIdentity() {
     state.isUnnamedFallback = true;
     state.uploaderOptions = [];
     state.selectedUploaderName = UNNAMED_GUEST;
+    state.rsvpAttending = "PUBLIC";
     saveStoredInviteKey("");
     saveStoredSelectedUploader(UNNAMED_GUEST);
     refreshUploadCount();
@@ -787,15 +811,19 @@ async function initializeInviteIdentity() {
     state.uploaderOptions = buildUploaderOptions(rsvpData);
     state.isUnnamedFallback = state.uploaderOptions.length === 0;
 
+    state.rsvpAttending = rsvpData?.rsvp?.attending || null;
+
     if (previousInviteKey !== state.inviteKey) {
       resetIdentityForInviteChange();
     }
 
-    if (state.isUnnamedFallback) {
+    if (state.rsvpAttending === "NO") {
+      setInviteBanner("This RSVP is marked as not attending. Uploads are disabled.", "warning");
+    } else if (state.isUnnamedFallback) {
       state.selectedUploaderName = UNNAMED_GUEST;
       saveStoredSelectedUploader(UNNAMED_GUEST);
       setInviteBanner("Invite found, but no guest names were available. Falling back to Unnamed Guest.", "warning");
-    } else {
+    } else  {
       const cachedName = loadStoredSelectedUploader();
       state.selectedUploaderName = state.uploaderOptions.includes(cachedName) ? cachedName : "";
       saveStoredSelectedUploader(state.selectedUploaderName);
@@ -808,6 +836,7 @@ async function initializeInviteIdentity() {
     state.isUnnamedFallback = true;
     state.uploaderOptions = [];
     state.selectedUploaderName = UNNAMED_GUEST;
+    state.rsvpAttending = "PUBLIC";
     saveStoredInviteKey("");
     saveStoredSelectedUploader(UNNAMED_GUEST);
     setInviteBanner("Invite lookup failed. Falling back to Unnamed Guest.", "warning");
@@ -818,6 +847,7 @@ async function initializeInviteIdentity() {
   populateUploaderSelect();
   refreshUploadCount();
   updateUploaderIdentityUi();
+  await syncUploadCountFromCloudinary(); 
 }
 
 async function handleUploadSubmit(event) {
@@ -923,6 +953,58 @@ async function uploadFile(file) {
   };
 }
 
+function isUploadAllowed() {
+  // No invite = always allowed
+  if (!state.inviteKey) return true;
+
+  if (state.rsvpAttending === "PUBLIC") return true;
+
+  // Explicit RSVP rules
+  if (state.rsvpAttending === "NO") return false;
+
+  if (state.rsvpAttending === "YES") return true;
+
+  // unknown / not loaded yet = block safely
+  return false;
+}
+
+async function syncUploadCountFromCloudinary() {
+  if (!state.inviteKey || !state.selectedUploaderName) return;
+
+  try {
+    const response = await fetch(getCloudinaryListUrl(), { cache: "no-store" });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch Cloudinary list");
+    }
+
+    const normalizedName = state.selectedUploaderName;
+    
+    const count = (data.resources || []).filter((resource) => {
+      const ctx = resource.context?.custom || resource.context || {};
+
+      return (
+        ctx.inviteKey === state.inviteKey &&
+        ctx.uploaderName === normalizedName
+      );
+    }).length;
+
+    // 🔥 Important: trust the higher value
+    const identityKey = getIdentityStorageKey(state.inviteKey, state.selectedUploaderName);
+    const localCount = getStoredUploadCount(identityKey);
+
+    state.uploadCount = Math.max(localCount, count);
+
+    setStoredUploadCount(identityKey, state.uploadCount);
+    updateUploadCount();
+    updateUploaderIdentityUi();
+
+  } catch (error) {
+    console.error("Cloudinary sync failed:", error);
+  }
+}
+
 syncConfigToUi();
 bindUploadEvents();
 bindGalleryEvents();
@@ -930,12 +1012,19 @@ bindCameraEvents();
 detectCameraSupport();
 
 const initialState = getAppState();
-showState(initialState);
 
 if (initialState === "countdown") {
   startCountdown();
 }
 
 if (initialState === "upload") {
-  initializeInviteIdentity();
+  initializeInviteIdentity().then(() => {
+    showState("upload");
+  });
+} else {
+  showState(initialState);
+
+  if (initialState === "countdown") {
+    startCountdown();
+  }
 }
