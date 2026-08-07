@@ -72,7 +72,7 @@ const CONFIG = {
   cameraUploadCutoffDate: "2026-07-26T05:00:00",
   uploadDaysAfterEvent: 3,
   uploadLimitPerUser: 10,
-  forceState: "upload"
+  forceState: "upload",
 };
 ```
 
@@ -124,3 +124,5 @@ Then open `http://localhost:8000`.
 ## Technical Spec
 
 The detailed implementation spec lives in [`TECHNICAL_SPEC.md`](D:/Projects/keepsake/TECHNICAL_SPEC.md).
+
+<!-- TODO remove this line -->
