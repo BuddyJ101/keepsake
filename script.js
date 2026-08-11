@@ -34,6 +34,7 @@ const state = {
   galleryItems: [],
   activeGalleryIndex: 0,
   isDownloadingGallery: false,
+  isDownloadingLightboxItem: false,
   cameraSupported: false,
   cameraEnabled: false,
   rsvpAttending: null,
@@ -204,6 +205,7 @@ function bindGalleryEvents() {
   const prevButton = document.getElementById("lightbox-prev");
   const nextButton = document.getElementById("lightbox-next");
   const lightbox = document.getElementById("gallery-lightbox");
+  const lightboxDownload = document.getElementById("lightbox-download");
   const downloadAllButton = document.getElementById("gallery-download-all");
 
   if (closeButton) {
@@ -226,6 +228,10 @@ function bindGalleryEvents() {
 
   if (downloadAllButton) {
     downloadAllButton.addEventListener("click", handleDownloadAllItems);
+  }
+
+  if (lightboxDownload) {
+    lightboxDownload.addEventListener("click", handleLightboxDownload);
   }
 
   document.addEventListener("keydown", handleLightboxKeydown);
@@ -384,6 +390,15 @@ function getExtensionFromUrl(url) {
   } catch (error) {
     return "";
   }
+}
+
+function getFallbackExtension(item) {
+  return item.type === "video" ? "mp4" : "jpg";
+}
+
+function getGalleryItemFilename(item, index, extension) {
+  const paddedIndex = String(index + 1).padStart(2, "0");
+  return `${paddedIndex}-${sanitizeZipName(item.tag)}.${extension}`;
 }
 
 function getZipDateParts(date = new Date()) {
@@ -820,15 +835,57 @@ async function fetchGalleryItemFile(item, index) {
   }
 
   const blob = await response.blob();
-  const fallbackExtension = item.type === "video" ? "mp4" : "jpg";
-  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || fallbackExtension;
+  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || getFallbackExtension(item);
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const paddedIndex = String(index + 1).padStart(2, "0");
 
   return {
-    name: `${ZIP_FOLDER_NAME}/${paddedIndex}-${sanitizeZipName(item.tag)}.${extension}`,
+    name: `${ZIP_FOLDER_NAME}/${getGalleryItemFilename(item, index, extension)}`,
     bytes
   };
+}
+
+async function fetchGalleryItemBlob(item, index) {
+  const response = await fetch(item.url);
+
+  if (!response.ok) {
+    throw new Error(`Could not download item ${index + 1}.`);
+  }
+
+  const blob = await response.blob();
+  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || getFallbackExtension(item);
+
+  return {
+    blob,
+    filename: getGalleryItemFilename(item, index, extension)
+  };
+}
+
+async function handleLightboxDownload(event) {
+  event.preventDefault();
+
+  if (state.isDownloadingLightboxItem) return;
+
+  const item = state.galleryItems[state.activeGalleryIndex];
+  const download = document.getElementById("lightbox-download");
+  if (!item || !download) return;
+
+  state.isDownloadingLightboxItem = true;
+  download.classList.add("disabled");
+  download.setAttribute("aria-disabled", "true");
+  download.textContent = "Preparing...";
+
+  try {
+    const file = await fetchGalleryItemBlob(item, state.activeGalleryIndex);
+    downloadBlob(file.blob, file.filename);
+  } catch (error) {
+    console.error(error);
+    updateGalleryStatus("This item could not be downloaded. Please try again.", "warning");
+  } finally {
+    state.isDownloadingLightboxItem = false;
+    download.classList.remove("disabled");
+    download.removeAttribute("aria-disabled");
+    download.textContent = "Download";
+  }
 }
 
 async function handleDownloadAllItems() {
@@ -897,6 +954,9 @@ function renderLightboxMedia(item) {
   tag.textContent = item.tag;
   download.href = item.url;
   download.setAttribute("download", "");
+  download.classList.remove("disabled");
+  download.removeAttribute("aria-disabled");
+  download.textContent = "Download";
 }
 
 function openLightbox(index) {
