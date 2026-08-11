@@ -301,6 +301,20 @@ textarea {
   border: 1px solid rgba(107, 179, 217, 0.18);
 }
 
+.gallery-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.gallery-actions .btn {
+  min-height: 2.6rem;
+  padding: 0.55rem 0.9rem;
+  white-space: nowrap;
+}
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

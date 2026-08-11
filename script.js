@@ -19,6 +19,7 @@ const STORAGE_KEYS = {
 const UNNAMED_GUEST = "Unnamed Guest";
 const UNNAMED_FOLDER = "wedding-app/guests/unnamed/";
 const GALLERY_TAG = "wedding-app";
+const ZIP_FOLDER_NAME = "keepsake-gallery";
 const publicEnv = {
   cloudName: document.body.dataset.cloudName,
   uploadPreset: document.body.dataset.uploadPreset,
@@ -32,6 +33,7 @@ const state = {
   isUnnamedFallback: true,
   galleryItems: [],
   activeGalleryIndex: 0,
+  isDownloadingGallery: false,
   cameraSupported: false,
   cameraEnabled: false,
   rsvpAttending: null,
@@ -202,6 +204,7 @@ function bindGalleryEvents() {
   const prevButton = document.getElementById("lightbox-prev");
   const nextButton = document.getElementById("lightbox-next");
   const lightbox = document.getElementById("gallery-lightbox");
+  const downloadAllButton = document.getElementById("gallery-download-all");
 
   if (closeButton) {
     closeButton.addEventListener("click", closeLightbox);
@@ -219,6 +222,10 @@ function bindGalleryEvents() {
     lightbox.addEventListener("click", handleLightboxBackdropClick);
     lightbox.addEventListener("touchstart", handleLightboxTouchStart, { passive: true });
     lightbox.addEventListener("touchend", handleLightboxTouchEnd, { passive: true });
+  }
+
+  if (downloadAllButton) {
+    downloadAllButton.addEventListener("click", handleDownloadAllItems);
   }
 
   document.addEventListener("keydown", handleLightboxKeydown);
@@ -317,6 +324,180 @@ function updateGalleryStatus(message, tone) {
 
   status.className = `invite-banner mb-4 ${tone || "info"}`.trim();
   status.textContent = message;
+}
+
+function getDownloadableGalleryItems() {
+  return state.galleryItems;
+}
+
+function updateGalleryDownloadButton() {
+  const button = document.getElementById("gallery-download-all");
+  if (!button) return;
+
+  const itemCount = getDownloadableGalleryItems().length;
+  button.disabled = itemCount === 0 || state.isDownloadingGallery;
+
+  if (state.isDownloadingGallery) {
+    button.textContent = "Preparing...";
+    return;
+  }
+
+  // button.textContent = itemCount === 1
+  //   ? "Download 1 item"
+  //   : `Download ${itemCount} items`;
+}
+
+function sanitizeZipName(value) {
+  return String(value || "image")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9-_]/g, "")
+    .toLowerCase() || "image";
+}
+
+function getExtensionFromContentType(contentType) {
+  const type = String(contentType || "").split(";")[0].trim().toLowerCase();
+  const extensions = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/avif": "avif",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "video/mp4": "mp4",
+    "video/mpeg": "mpeg",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+    "video/x-msvideo": "avi"
+  };
+
+  return extensions[type] || "";
+}
+
+function getExtensionFromUrl(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
+    return match ? match[1].toLowerCase() : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function getZipDateParts(date = new Date()) {
+  return {
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+    date: ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()
+  };
+}
+
+function makeCrcTable() {
+  return Array.from({ length: 256 }, (_, index) => {
+    let value = index;
+
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+
+    return value >>> 0;
+  });
+}
+
+const CRC_TABLE = makeCrcTable();
+
+function getCrc32(bytes) {
+  let crc = 0xffffffff;
+
+  bytes.forEach((byte) => {
+    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint16(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function writeUint32(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function createZip(files) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const centralDirectory = [];
+  let offset = 0;
+  const { time, date } = getZipDateParts();
+
+  files.forEach((file) => {
+    const nameBytes = encoder.encode(file.name);
+    const crc = getCrc32(file.bytes);
+    const localHeader = [];
+
+    writeUint32(localHeader, 0x04034b50);
+    writeUint16(localHeader, 20);
+    writeUint16(localHeader, 0x0800);
+    writeUint16(localHeader, 0);
+    writeUint16(localHeader, time);
+    writeUint16(localHeader, date);
+    writeUint32(localHeader, crc);
+    writeUint32(localHeader, file.bytes.length);
+    writeUint32(localHeader, file.bytes.length);
+    writeUint16(localHeader, nameBytes.length);
+    writeUint16(localHeader, 0);
+
+    const centralHeader = [];
+    writeUint32(centralHeader, 0x02014b50);
+    writeUint16(centralHeader, 20);
+    writeUint16(centralHeader, 20);
+    writeUint16(centralHeader, 0x0800);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, time);
+    writeUint16(centralHeader, date);
+    writeUint32(centralHeader, crc);
+    writeUint32(centralHeader, file.bytes.length);
+    writeUint32(centralHeader, file.bytes.length);
+    writeUint16(centralHeader, nameBytes.length);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint16(centralHeader, 0);
+    writeUint32(centralHeader, 0);
+    writeUint32(centralHeader, offset);
+
+    chunks.push(new Uint8Array(localHeader), nameBytes, file.bytes);
+    centralDirectory.push(new Uint8Array(centralHeader), nameBytes);
+    offset += localHeader.length + nameBytes.length + file.bytes.length;
+  });
+
+  const centralDirectorySize = centralDirectory.reduce((total, chunk) => total + chunk.length, 0);
+  const endOfCentralDirectory = [];
+  writeUint32(endOfCentralDirectory, 0x06054b50);
+  writeUint16(endOfCentralDirectory, 0);
+  writeUint16(endOfCentralDirectory, 0);
+  writeUint16(endOfCentralDirectory, files.length);
+  writeUint16(endOfCentralDirectory, files.length);
+  writeUint32(endOfCentralDirectory, centralDirectorySize);
+  writeUint32(endOfCentralDirectory, offset);
+  writeUint16(endOfCentralDirectory, 0);
+
+  return new Blob([...chunks, ...centralDirectory, new Uint8Array(endOfCentralDirectory)], {
+    type: "application/zip"
+  });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function formatCountdownPart(value) {
@@ -603,6 +784,7 @@ function renderGallery() {
   if (!grid || !count) return;
 
   count.textContent = `${state.galleryItems.length} item${state.galleryItems.length === 1 ? "" : "s"}`;
+  updateGalleryDownloadButton();
 
   if (!state.galleryItems.length) {
     grid.innerHTML = `
@@ -628,6 +810,50 @@ function renderGallery() {
   grid.querySelectorAll("[data-gallery-index]").forEach((button) => {
     button.addEventListener("click", () => openLightbox(Number(button.dataset.galleryIndex)));
   });
+}
+
+async function fetchGalleryItemFile(item, index) {
+  const response = await fetch(item.url);
+
+  if (!response.ok) {
+    throw new Error(`Could not download item ${index + 1}.`);
+  }
+
+  const blob = await response.blob();
+  const fallbackExtension = item.type === "video" ? "mp4" : "jpg";
+  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || fallbackExtension;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const paddedIndex = String(index + 1).padStart(2, "0");
+
+  return {
+    name: `${ZIP_FOLDER_NAME}/${paddedIndex}-${sanitizeZipName(item.tag)}.${extension}`,
+    bytes
+  };
+}
+
+async function handleDownloadAllItems() {
+  const items = getDownloadableGalleryItems();
+
+  if (!items.length || state.isDownloadingGallery) {
+    return;
+  }
+
+  state.isDownloadingGallery = true;
+  updateGalleryDownloadButton();
+  updateGalleryStatus(`Preparing ${items.length} item${items.length === 1 ? "" : "s"}...`, "info");
+
+  try {
+    const files = await Promise.all(items.map(fetchGalleryItemFile));
+    const zip = createZip(files);
+    downloadBlob(zip, `${ZIP_FOLDER_NAME}.zip`);
+    updateGalleryStatus(`Downloaded ${items.length} item${items.length === 1 ? "" : "s"} as a zip.`, "success");
+  } catch (error) {
+    console.error(error);
+    updateGalleryStatus("The gallery zip could not be created. Please try again.", "warning");
+  } finally {
+    state.isDownloadingGallery = false;
+    updateGalleryDownloadButton();
+  }
 }
 
 async function loadGalleryItems() {
