@@ -55,7 +55,7 @@ function formatFileSize(bytes) {
 }
 
 function isAcceptedBulkFile(file) {
-  return file.type.startsWith("image/");
+  return file.type.startsWith("image/") || file.type.startsWith("video/");
 }
 
 function setBulkStatus(message, tone) {
