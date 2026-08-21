@@ -20,6 +20,10 @@ const UNNAMED_GUEST = "Unnamed Guest";
 const UNNAMED_FOLDER = "wedding-app/guests/unnamed/";
 const GALLERY_TAG = "wedding-app";
 const ZIP_FOLDER_NAME = "keepsake-gallery";
+const GALLERY_IMAGE_TRANSFORMATIONS = {
+  thumbnail: "c_limit,w_500,q_auto,f_auto",
+  lightbox: "c_limit,w_2000,q_auto,f_auto"
+};
 const publicEnv = {
   cloudName: document.body.dataset.cloudName,
   uploadPreset: document.body.dataset.uploadPreset,
@@ -776,6 +780,15 @@ function getResourceUrl(resource) {
   return `https://res.cloudinary.com/${publicEnv.cloudName}/${resource.resource_type}/upload/${version}${resource.public_id}.${resource.format}`;
 }
 
+function getTransformedImageUrl(resource, transformation) {
+  if (resource.resource_type === "video") {
+    return getResourceUrl(resource);
+  }
+
+  const version = resource.version ? `v${resource.version}/` : "";
+  return `https://res.cloudinary.com/${publicEnv.cloudName}/image/upload/${transformation}/${version}${resource.public_id}.${resource.format}`;
+}
+
 function mapGalleryResource(resource) {
   const context = resource.context?.custom || resource.context || {};
   const rawName = context.uploaderName || context.uploadername || UNNAMED_GUEST;
@@ -787,7 +800,10 @@ function mapGalleryResource(resource) {
     url: getResourceUrl(resource),
     thumbUrl: resource.resource_type === "video"
       ? `https://res.cloudinary.com/${publicEnv.cloudName}/video/upload/so_0/${resource.public_id}.jpg`
-      : getResourceUrl(resource),
+      : getTransformedImageUrl(resource, GALLERY_IMAGE_TRANSFORMATIONS.thumbnail),
+    lightboxUrl: resource.resource_type === "video"
+      ? getResourceUrl(resource)
+      : getTransformedImageUrl(resource, GALLERY_IMAGE_TRANSFORMATIONS.lightbox),
     tag: displayName,
     alt: displayName
   };
@@ -812,14 +828,18 @@ function renderGallery() {
   }
 
   grid.innerHTML = state.galleryItems
-    .map((item, index) => `
+    .map((item, index) => {
+      const loading = index < 4 ? "eager" : "lazy";
+
+      return `
       <button class="gallery-card" type="button" data-gallery-index="${index}" aria-label="Open media ${index + 1}">
         <div class="gallery-media-shell">
-          <img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}">
+          <img class="gallery-media" src="${item.thumbUrl}" alt="${item.alt}" loading="${loading}" decoding="async">
         </div>
         <span class="gallery-tag">${item.tag}</span>
       </button>
-    `)
+    `;
+    })
     .join("");
 
   grid.querySelectorAll("[data-gallery-index]").forEach((button) => {
@@ -827,15 +847,20 @@ function renderGallery() {
   });
 }
 
+function getGalleryItemDownloadUrl(item) {
+  return item.type === "video" ? item.url : item.lightboxUrl;
+}
+
 async function fetchGalleryItemFile(item, index) {
-  const response = await fetch(item.url);
+  const downloadUrl = getGalleryItemDownloadUrl(item);
+  const response = await fetch(downloadUrl);
 
   if (!response.ok) {
     throw new Error(`Could not download item ${index + 1}.`);
   }
 
   const blob = await response.blob();
-  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || getFallbackExtension(item);
+  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(downloadUrl) || getFallbackExtension(item);
   const bytes = new Uint8Array(await blob.arrayBuffer());
 
   return {
@@ -845,14 +870,15 @@ async function fetchGalleryItemFile(item, index) {
 }
 
 async function fetchGalleryItemBlob(item, index) {
-  const response = await fetch(item.url);
+  const downloadUrl = getGalleryItemDownloadUrl(item);
+  const response = await fetch(downloadUrl);
 
   if (!response.ok) {
     throw new Error(`Could not download item ${index + 1}.`);
   }
 
   const blob = await response.blob();
-  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(item.url) || getFallbackExtension(item);
+  const extension = getExtensionFromContentType(response.headers.get("content-type")) || getExtensionFromUrl(downloadUrl) || getFallbackExtension(item);
 
   return {
     blob,
@@ -949,10 +975,10 @@ function renderLightboxMedia(item) {
 
   container.innerHTML = item.type === "video"
     ? `<video class="lightbox-asset" src="${item.url}" controls autoplay playsinline></video>`
-    : `<img class="lightbox-asset" src="${item.url}" alt="${item.alt}">`;
+    : `<img class="lightbox-asset" src="${item.lightboxUrl}" alt="${item.alt}" decoding="async">`;
 
   tag.textContent = item.tag;
-  download.href = item.url;
+  download.href = getGalleryItemDownloadUrl(item);
   download.setAttribute("download", "");
   download.classList.remove("disabled");
   download.removeAttribute("aria-disabled");
