@@ -98,7 +98,21 @@ function updateBulkSummary() {
   if (uploadedCount) uploadedCount.textContent = String(bulkState.uploadedCount);
   if (failedCount) failedCount.textContent = String(bulkState.failedCount);
   if (progress) progress.setAttribute("aria-valuenow", String(percentage));
-  if (progressBar) progressBar.style.width = `${percentage}%`;
+  if (progressBar) {
+    progressBar.style.width = `${percentage}%`;
+    progressBar.classList.remove("progress-bar-striped", "progress-bar-animated");
+  }
+}
+
+function updateCompressionProgress(progressValue, completedFiles = 0, totalFiles = 1) {
+  const { progress, progressBar } = getBulkElements();
+  const ratio = Math.max(0, Math.min(1, progressValue || 0));
+  const percentage = Math.round(((completedFiles + ratio) / totalFiles) * 100);
+  if (progress) progress.setAttribute("aria-valuenow", String(percentage));
+  if (progressBar) {
+    progressBar.style.width = `${Math.max(2, percentage)}%`;
+    progressBar.classList.add("progress-bar-striped", "progress-bar-animated");
+  }
 }
 
 function renderBulkFileList() {
@@ -188,16 +202,20 @@ function clearBulkQueue() {
   setBulkStatus("", "");
 }
 
-function validateBulkUpload(name) {
+function validateBulkUpload(name, options = {}) {
   if (!bulkEnv.cloudName || !bulkEnv.uploadPreset) throw new Error("Cloudinary settings are missing.");
   if (!name.trim()) throw new Error("Add an upload name before uploading.");
   if (!bulkState.files.length) throw new Error("Choose one or more images or videos before uploading.");
   const invalidFile = bulkState.files.find((item) => !isAcceptedBulkFile(item.file));
   if (invalidFile) throw new Error(`${invalidFile.file.name} is not a supported image or video.`);
   const pendingCompression = bulkState.files.find((item) => item.needsCompression);
-  if (pendingCompression) throw new Error(`Compress ${pendingCompression.file.name} before uploading.`);
+  if (pendingCompression && !options.allowPendingCompression) {
+    throw new Error(`Compress ${pendingCompression.file.name} before uploading.`);
+  }
   const oversizedFile = bulkState.files.find((item) => item.file.size > bulkEnv.maxFileSizeMb * BYTES_PER_MB);
-  if (oversizedFile) throw new Error(`${oversizedFile.file.name} is larger than ${bulkEnv.maxFileSizeMb} MB.`);
+  if (oversizedFile && !canCompressFile(oversizedFile.file)) {
+    throw new Error(`${oversizedFile.file.name} is too large. Videos must be ${MAX_COMPRESS_INPUT_MB} MB or smaller for local compression.`);
+  }
 }
 
 function getVideoDuration(file) {
@@ -274,7 +292,7 @@ async function cleanupFfmpegFiles(ffmpeg, paths) {
   }));
 }
 
-async function compressBulkVideo(index) {
+async function compressBulkVideo(index, options = {}) {
   const item = bulkState.files[index];
   if (!item?.needsCompression || bulkState.compressionIndex !== null || bulkState.isUploading) return;
   const originalFile = item.originalFile;
@@ -284,11 +302,13 @@ async function compressBulkVideo(index) {
   const outputPath = `output-${uniqueId}.mp4`;
   bulkState.compressionIndex = index;
   setBulkControlsDisabled(true);
+  updateCompressionProgress(0, options.batchPosition || 0, options.batchTotal || 1);
   setFileStatus(index, "working", "Preparing compressor", "Loading the desktop compression engine…");
   setBulkStatus(`Preparing ${originalFile.name} for compression…`, "working");
 
   let ffmpeg;
   let progressHandler;
+  let succeeded = false;
   try {
     const duration = await getVideoDuration(originalFile);
     const videoBitrate = calculateVideoBitrate(duration);
@@ -298,6 +318,7 @@ async function compressBulkVideo(index) {
     progressHandler = ({ progress }) => {
       if (bulkState.compressionIndex !== index) return;
       const percentage = Math.max(0, Math.min(99, Math.round((progress || 0) * 100)));
+      updateCompressionProgress(progress, options.batchPosition || 0, options.batchTotal || 1);
       setFileStatus(index, "working", `Compressing ${percentage}%`, "Keep this tab open until compression finishes.");
     };
     ffmpeg.on("progress", progressHandler);
@@ -321,6 +342,7 @@ async function compressBulkVideo(index) {
     item.file = compressedFile;
     item.compressedSize = compressedFile.size;
     item.needsCompression = false;
+    succeeded = true;
     setFileStatus(index, "queued", "Ready to upload", "Compressed locally to H.264 MP4.");
     setBulkStatus(`${originalFile.name} compressed from ${formatFileSize(originalFile.size)} to ${formatFileSize(compressedFile.size)}.`, "success");
   } catch (error) {
@@ -339,9 +361,10 @@ async function compressBulkVideo(index) {
     if (progressHandler && ffmpeg) ffmpeg.off("progress", progressHandler);
     if (ffmpeg?.loaded) await cleanupFfmpegFiles(ffmpeg, [inputPath, outputPath]);
     if (bulkState.compressionIndex === index) bulkState.compressionIndex = null;
-    setBulkControlsDisabled(false);
+    if (!options.keepControlsDisabled) setBulkControlsDisabled(false);
     renderBulkFileList();
   }
+  return succeeded;
 }
 
 function cancelBulkCompression(index) {
@@ -394,10 +417,55 @@ async function handleBulkUploadSubmit(event) {
   event.preventDefault();
   const { nameInput } = getBulkElements();
   const uploaderName = nameInput?.value || "";
-  try { validateBulkUpload(uploaderName); } catch (error) {
+  try { validateBulkUpload(uploaderName, { allowPendingCompression: true }); } catch (error) {
     setBulkStatus(error.message, "error");
     return;
   }
+
+  const compressionIndexes = bulkState.files
+    .map((item, index) => item.needsCompression ? index : -1)
+    .filter((index) => index >= 0);
+
+  if (compressionIndexes.length) {
+    setBulkControlsDisabled(true);
+    setBulkStatus(
+      `${compressionIndexes.length} large file${compressionIndexes.length === 1 ? " needs" : "s need"} compression before upload. Starting compression…`,
+      "working"
+    );
+
+    for (const [position, index] of compressionIndexes.entries()) {
+      const item = bulkState.files[index];
+      setBulkStatus(
+        `Compressing large file ${position + 1} of ${compressionIndexes.length}: ${item.originalFile.name}. Uploading will start when compression finishes.`,
+        "working"
+      );
+      const compressed = await compressBulkVideo(index, {
+        keepControlsDisabled: true,
+        batchPosition: position,
+        batchTotal: compressionIndexes.length
+      });
+      if (!compressed) {
+        setBulkControlsDisabled(false);
+        if (bulkState.compressionIndex === null && item.needsCompression) {
+          setBulkStatus(
+            `Upload paused because ${item.originalFile.name} was not compressed. Retry compression or remove the file.`,
+            "error"
+          );
+        }
+        return;
+      }
+    }
+
+    updateBulkSummary();
+    setBulkStatus("Large-file compression complete. Starting upload…", "success");
+  }
+
+  try { validateBulkUpload(uploaderName); } catch (error) {
+    setBulkControlsDisabled(false);
+    setBulkStatus(error.message, "error");
+    return;
+  }
+
   bulkState.isUploading = true;
   bulkState.uploadedCount = 0;
   bulkState.failedCount = 0;
