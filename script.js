@@ -104,7 +104,16 @@ function saveStoredInviteKey(value) {
 }
 
 function isAcceptedFile(file) {
-  return file.type.startsWith("image/") || file.type.startsWith("video/");
+  return getMediaType(file) !== null;
+}
+
+function getMediaType(file) {
+  const mimeType = String(file.type || "").toLowerCase();
+  const extension = String(file.name || "").split(".").pop().toLowerCase();
+
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/") || ["mov", "qt"].includes(extension)) return "video";
+  return null;
 }
 
 function getAppState() {
@@ -1238,6 +1247,7 @@ function setStatus(message, tone) {
 }
 
 async function uploadFile(file) {
+  const mediaType = getMediaType(file);
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", publicEnv.uploadPreset);
@@ -1246,7 +1256,7 @@ async function uploadFile(file) {
   formData.append("context", `inviteKey=${state.inviteKey || "unnamed"}|uploaderName=${state.selectedUploaderName || UNNAMED_GUEST}`);
 
   const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${publicEnv.cloudName}/auto/upload`,
+    `https://api.cloudinary.com/v1_1/${publicEnv.cloudName}/${mediaType}/upload`,
     {
       method: "POST",
       body: formData
@@ -1260,7 +1270,7 @@ async function uploadFile(file) {
   }
 
   return {
-    type: file.type.startsWith("video/") ? "video" : "image",
+    type: mediaType,
     url: data.secure_url
   };
 }

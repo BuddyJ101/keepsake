@@ -55,7 +55,16 @@ function formatFileSize(bytes) {
 }
 
 function isAcceptedBulkFile(file) {
-  return file.type.startsWith("image/") || file.type.startsWith("video/");
+  return getBulkMediaType(file) !== null;
+}
+
+function getBulkMediaType(file) {
+  const mimeType = String(file.type || "").toLowerCase();
+  const extension = String(file.name || "").split(".").pop().toLowerCase();
+
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/") || ["mov", "qt"].includes(extension)) return "video";
+  return null;
 }
 
 function setBulkStatus(message, tone) {
@@ -179,12 +188,12 @@ function validateBulkUpload(name) {
   }
 
   if (!bulkState.files.length) {
-    throw new Error("Choose one or more images before uploading.");
+    throw new Error("Choose one or more images or videos before uploading.");
   }
 
   const invalidFile = bulkState.files.find((item) => !isAcceptedBulkFile(item.file));
   if (invalidFile) {
-    throw new Error(`${invalidFile.file.name} is not an image.`);
+    throw new Error(`${invalidFile.file.name} is not a supported image or video.`);
   }
 
   const oversizedFile = bulkState.files.find((item) => item.file.size > bulkEnv.maxFileSizeMb * 1024 * 1024);
@@ -198,6 +207,7 @@ function getBulkUploadFolder(name) {
 }
 
 async function uploadBulkFile(file, uploaderName) {
+  const mediaType = getBulkMediaType(file);
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", bulkEnv.uploadPreset);
@@ -209,7 +219,7 @@ async function uploadBulkFile(file, uploaderName) {
   );
 
   const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${bulkEnv.cloudName}/auto/upload`,
+    `https://api.cloudinary.com/v1_1/${bulkEnv.cloudName}/${mediaType}/upload`,
     {
       method: "POST",
       body: formData
@@ -259,7 +269,7 @@ async function handleBulkUploadSubmit(event) {
     } catch (error) {
       console.error(error);
       bulkState.failedCount += 1;
-      setFileStatus(index, "error", "Failed");
+      setFileStatus(index, "error", error.message || "Upload failed");
     }
 
     updateBulkSummary();
@@ -273,14 +283,14 @@ async function handleBulkUploadSubmit(event) {
     return;
   }
 
-  setBulkStatus(`${bulkState.uploadedCount} image${bulkState.uploadedCount === 1 ? "" : "s"} uploaded successfully.`, "success");
+  setBulkStatus(`${bulkState.uploadedCount} file${bulkState.uploadedCount === 1 ? "" : "s"} uploaded successfully.`, "success");
 }
 
 function initializeBulkUploadPage() {
   const { form, fileInput, clearButton, helpText } = getBulkElements();
 
   if (helpText) {
-    helpText.textContent = `Images only. Max size: ${bulkEnv.maxFileSizeMb} MB.`;
+    helpText.textContent = `Images and videos, including MOV. Max size: ${bulkEnv.maxFileSizeMb} MB per file.`;
   }
 
   if (form) {
