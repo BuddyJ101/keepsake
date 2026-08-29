@@ -564,6 +564,38 @@ textarea {
   color: var(--error-text);
 }
 
+.bulk-compression-notice {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 193, 7, 0.42);
+  border-radius: 0.85rem;
+  background: rgba(255, 193, 7, 0.08);
+  color: var(--text-tertiary);
+}
+
+.bulk-compression-notice strong {
+  color: #ffd86b;
+}
+
+.bulk-file-detail {
+  display: block;
+  max-width: 48rem;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.bulk-file-result {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.bulk-file-action {
+  white-space: nowrap;
+}
+
 @media (max-width: 575.98px) {
   .card-surface {
     border-radius: 22px;
@@ -575,7 +607,12 @@ textarea {
   }
 
   .bulk-file-status {
+    width: auto;
+  }
+
+  .bulk-file-result {
     width: 100%;
+    justify-content: space-between;
   }
 
   .lightbox-meta {

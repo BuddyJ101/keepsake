@@ -97,6 +97,8 @@ Uploads use:
 - the `wedding-app` tag for gallery discovery
 - upload context for the uploader name and invite key
 
+The separate bulk-upload page can locally compress videos between 100 MB and 500 MB to a target of 90 MB before upload. Compression is intended for desktop use, runs entirely in the browser using the self-hosted single-threaded FFmpeg runtime in `assets/ffmpeg`, and does not affect the standard guest uploader.
+
 ## Project Files
 
 - [`index.html`](D:/Projects/keepsake/index.html): all page sections and UI structure
